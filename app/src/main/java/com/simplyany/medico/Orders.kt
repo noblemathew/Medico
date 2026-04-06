@@ -1,0 +1,7 @@
+package com.simplyany.medico
+
+data class Orders( val desc:String?=null,
+                   val image: String?=null,
+                   val name: String?=null,
+                   val price: String?=null
+)

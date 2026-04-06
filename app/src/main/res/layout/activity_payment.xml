@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".PaymentActivity">
+    <TextView
+        android:id="@+id/tv_subtitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp"
+        android:fontFamily="@font/poppinsr"
+        android:padding="10dp"
+        android:text="Payment"
+        android:textSize="24sp" />
+
+    <EditText
+        android:id="@+id/cnumber"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:hint="Enter Card Number"
+        android:layout_marginHorizontal="20dp"
+        android:layout_below="@id/tv_subtitle"
+        android:padding="10dp"
+        android:layout_marginTop="20dp"
+        android:inputType="number"
+        android:background="@drawable/et_custom"
+        android:textSize="15sp" />
+    <EditText
+        android:id="@+id/cname"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:hint="Name on the card"
+        android:layout_marginHorizontal="20dp"
+        android:layout_below="@id/cnumber"
+        android:padding="10dp"
+        android:layout_marginTop="20dp"
+        android:inputType="textCapWords"
+        android:background="@drawable/et_custom"
+        android:textSize="15sp" />
+    <EditText
+        android:id="@+id/cvv"
+        android:layout_width="150dp"
+        android:layout_height="50dp"
+        android:hint="Enter CVV"
+        android:layout_marginHorizontal="20dp"
+        android:layout_below="@id/cname"
+        android:padding="10dp"
+        android:maxLength="3"
+        android:layout_marginTop="20dp"
+        android:inputType="number"
+        android:background="@drawable/et_custom"
+        android:textSize="15sp" />
+    <EditText
+        android:id="@+id/date"
+        android:layout_width="180dp"
+        android:layout_height="50dp"
+        android:hint="Expiry Date"
+        android:layout_alignParentRight="true"
+        android:layout_marginHorizontal="20dp"
+        android:layout_below="@id/cname"
+        android:padding="10dp"
+        android:layout_marginTop="20dp"
+        android:inputType="date"
+        android:background="@drawable/et_custom"
+        android:textSize="15sp" />
+    <Button
+        android:id="@+id/submit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/poppinsm"
+        android:text="Submit"
+        android:background="@drawable/btn_custom"
+        android:layout_marginHorizontal="20dp"
+        android:layout_below="@id/date"
+        android:layout_marginTop="50dp"
+        android:textColor="@color/white"/>
+
+</RelativeLayout>

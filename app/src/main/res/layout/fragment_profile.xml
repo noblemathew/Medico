@@ -1,0 +1,40 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:cardCornerRadius="10dp">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+            <ScrollView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content">
+
+
+
+
+                <RelativeLayout
+
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/recyclerDashboard2"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:layout_margin="5dp"/>
+
+
+                </RelativeLayout>
+            </ScrollView>
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
+</RelativeLayout>

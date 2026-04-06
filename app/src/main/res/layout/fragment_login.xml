@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".Login">
+
+    <TextView
+        android:id="@+id/tv_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/tv_subtitle"
+        android:layout_marginStart="25dp"
+        android:layout_marginBottom="10dp"
+        android:textColor="@color/black"
+        android:fontFamily="@font/poppinsm"
+        android:text="@string/app_name"
+        android:textSize="50sp" />
+
+    <TextView
+        android:id="@+id/tv_subtitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/et_email"
+        android:layout_marginStart="25dp"
+        android:layout_marginBottom="50dp"
+        android:fontFamily="@font/poppinsr"
+        android:padding="10dp"
+        android:text="Login"
+        android:textSize="24sp" />
+
+    <EditText
+        android:id="@+id/et_email"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:hint="Enter Email"
+        android:layout_marginLeft="20dp"
+        android:layout_marginRight="20dp"
+        android:padding="10dp"
+        android:inputType="textEmailAddress"
+        android:fontFamily="@font/poppinsr"
+        android:layout_above="@id/et_password"
+        android:background="@drawable/et_custom"
+        android:textSize="15sp" />
+
+    <EditText
+        android:id="@+id/et_password"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:layout_centerInParent="true"
+        android:layout_marginLeft="20dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginRight="20dp"
+        android:background="@drawable/et_custom"
+        android:fontFamily="@font/poppinsr"
+        android:hint="Enter Password"
+        android:inputType="textPassword"
+        android:padding="10dp"
+        android:textSize="15sp" />
+
+    <Button
+        android:id="@+id/btn_login"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/et_password"
+        android:layout_marginLeft="20dp"
+        android:layout_marginTop="15dp"
+        android:layout_marginRight="20dp"
+        android:background="@drawable/btn_custom"
+        android:fontFamily="@font/poppinsm"
+        android:text="Login"
+        android:textColor="@android:color/white" />
+
+    <TextView
+        android:id="@+id/forget"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/btn_login"
+        android:layout_alignParentRight="true"
+        android:layout_marginStart="15dp"
+        android:layout_marginTop="15dp"
+        android:layout_marginEnd="15dp"
+        android:layout_marginBottom="15dp"
+        android:fontFamily="@font/poppinsm"
+        android:padding="5dp"
+        android:text="Forget Password ?"
+        android:textColor="#7A7A7A" />
+
+    <ImageView
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:src="@drawable/ic_arrow_right"
+        android:layout_above="@id/swipeRight"
+        android:layout_centerHorizontal="true"/>
+
+    <TextView
+        android:id="@+id/swipeRight"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Swipe left to Register"
+        android:textSize="15sp"
+        android:fontFamily="@font/poppinsm"
+        android:layout_centerHorizontal="true"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="20dp"/>
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:id="@+id/parentRelativelogin"
+        android:background="@color/white">
+        <ProgressBar
+            android:id="@+id/progressbarlogin"
+            android:backgroundTint="@color/black"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:indeterminate="true"
+            android:indeterminateDrawable="@drawable/progress_bg"
+            android:progress="0"/>
+
+    </RelativeLayout>
+
+</RelativeLayout>

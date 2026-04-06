@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#7A8EFA"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+
+   <RelativeLayout
+       android:id="@+id/parentRelative"
+       android:layout_width="match_parent"
+       android:layout_height="260dp"
+       android:background="#7A8EFA">
+
+      <TextView
+          android:id="@+id/text1"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_centerHorizontal="true"
+          android:layout_marginTop="50dp"
+          android:fontFamily="@font/poppinsm"
+          android:text="Hello User !"
+          android:textAlignment="center"
+          android:textColor="@color/white"
+          android:textSize="24sp" />
+
+      <TextView
+          android:layout_marginHorizontal="10dp"
+          android:id="@+id/sea"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_below="@+id/text1"
+          android:layout_centerHorizontal="true"
+          android:fontFamily="@font/poppinsr"
+          android:text="Shop your medicine from the wide variety of products"
+          android:textAlignment="center"
+          android:textColor="@color/white"
+          android:textSize="18sp" />
+
+      <SearchView
+          android:layout_marginTop="10dp"
+          android:id="@+id/search_bar"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_below="@id/sea"
+          android:layout_marginHorizontal="20dp"
+          android:background="@drawable/et_custom"
+          android:textAlignment="center" />
+   </RelativeLayout>
+
+
+   <androidx.cardview.widget.CardView
+       android:layout_width="match_parent"
+       android:layout_height="match_parent"
+       android:layout_below="@id/parentRelative"
+
+       app:cardCornerRadius="15dp">
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="match_parent">
+      <ScrollView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content">
+
+
+
+
+   <RelativeLayout
+
+       android:layout_width="match_parent"
+       android:layout_height="match_parent">
+
+
+      <androidx.recyclerview.widget.RecyclerView
+          android:id="@+id/recyclerDashboard"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:layout_margin="5dp"/>
+
+
+   </RelativeLayout>
+      </ScrollView>
+      </LinearLayout>
+
+   </androidx.cardview.widget.CardView>
+
+</RelativeLayout>
+
+

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:background="#ffffff"
+    android:layout_margin="10dp"
+    app:cardCornerRadius="4dp">
+
+    <LinearLayout
+        android:id="@+id/l2Content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#ffffff"
+        android:orientation="horizontal"
+        android:weightSum="6">
+
+
+
+        <ImageView
+            android:id="@+id/medimg2"
+            android:layout_width="80dp"
+            android:layout_height="200dp"
+            android:layout_weight="1.5"
+            android:padding="5dp"
+            android:scaleType="centerCrop"
+            android:src="@mipmap/ic_launcher" />
+
+        <RelativeLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3.3">
+
+            <TextView
+                android:layout_marginTop="10dp"
+                android:id="@+id/medname"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="8dp"
+                android:text="Name of the Product"
+                android:textColor="#000000"
+                android:textSize="20sp"
+                android:fontFamily="@font/poppinsm"/>
+
+
+
+            <TextView
+                android:id="@+id/medprice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_below="@id/medname"
+                android:layout_alignParentBottom="true"
+                android:padding="8dp"
+                android:text="Rs. 299"
+                android:fontFamily="@font/poppinsm"
+                android:textColor="#357a38"
+                android:textSize="22sp"
+                android:layout_marginTop="10dp"
+                android:textStyle="bold" />
+        </RelativeLayout>
+
+
+    </LinearLayout>
+    <TextView
+        android:id="@+id/text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/l2Content"
+        android:layout_marginTop="10dp"
+        android:padding="10dp"
+        android:layout_marginHorizontal="10dp"
+        android:fontFamily="@font/poppinsm"
+        android:text="Item Details"
+        android:textStyle="bold"
+        android:textSize="18sp"/>
+    <TextView
+        android:id="@+id/price"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/text"
+        android:fontFamily="@font/poppinsr"
+        android:text="Price : "
+        android:layout_marginLeft="20dp"/>
+    <TextView
+        android:id="@+id/priced"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentRight="true"
+        android:layout_marginRight="20dp"
+        android:layout_toRightOf="@id/price"
+        android:layout_below="@id/text"
+        android:text="100 Rs"
+        android:textAlignment="textEnd"/>
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/price"
+        android:layout_marginLeft="20dp"
+        android:fontFamily="@font/poppinsr"
+        android:text="Shipping Charge : "/>
+    <TextView
+        android:id="@+id/ship"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_toRightOf="@id/price"
+        android:layout_below="@id/price"
+        android:layout_alignParentRight="true"
+        android:layout_marginRight="20dp"
+        android:fontFamily="@font/poppinsr"
+        android:text="FREE"
+        android:textAlignment="textEnd"/>
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/ship"
+        android:text="Total :"
+        android:layout_marginLeft="20dp"
+        android:fontFamily="@font/poppinsr"/>
+    <TextView
+        android:id="@+id/sameasprice"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/ship"
+        android:layout_alignParentRight="true"
+        android:layout_marginRight="20dp"
+        android:text="100 Rs"
+        android:fontFamily="@font/poppinsr"/>
+    <TextView
+        android:id="@+id/deliverydetails"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/sameasprice"
+        android:layout_marginTop="10dp"
+        android:fontFamily="@font/poppinsm"
+        android:text="Delivery Details"
+        android:textStyle="bold"
+        android:textSize="18sp"
+        android:padding="10dp"
+        android:layout_marginHorizontal="10dp"/>
+
+    <EditText
+        android:id="@+id/et_address"
+        android:layout_below="@id/deliverydetails"
+        android:inputType="textMultiLine"
+        android:lines="6"
+        android:minLines="6"
+        android:gravity="top|start"
+        android:maxLines="8"
+        android:background="@drawable/et_custom"
+        android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:scrollbars="vertical"/>
+    <TextView
+        android:id="@+id/paymentdetails"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/et_address"
+        android:layout_marginTop="10dp"
+        android:fontFamily="@font/poppinsm"
+        android:text="Payment Details"
+        android:textStyle="bold"
+        android:textSize="18sp"
+        android:padding="10dp"
+        android:layout_marginHorizontal="10dp"/>
+    <LinearLayout
+        android:layout_below="@id/paymentdetails"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <RadioGroup
+            android:id="@+id/radio"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+            <RadioButton
+                android:id="@+id/cod"
+                android:layout_marginLeft="20dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="COD"
+                android:fontFamily="@font/poppinsr"/>
+            <RadioButton
+                android:id="@+id/card"
+                android:layout_marginLeft="40dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Debit/Credit Card"
+                android:fontFamily="@font/poppinsr"/>
+        </RadioGroup>
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btn_done"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/btn_custom"
+        android:fontFamily="@font/poppinsm"
+        android:layout_below="@id/paymentdetails"
+        android:layout_marginTop="80dp"
+        android:textColor="@android:color/white"
+        android:text="Buy NOW"/>
+
+
+</RelativeLayout>
