@@ -1,1337 +1,152 @@
-"""
-Insight IQ - AI-Intelligent Report Validation & Insights Generator
-Single-file version. Run: python insight_iq.py
-Requirements: pip install customtkinter pandas openpyxl scikit-learn seaborn matplotlib Pillow pywin32
-"""
+CREATE DATABASE DRawDB;
+GO
 
-import os
-import re
-import io
-import sys
-import glob
-import time
-import base64
-import getpass
-import threading
-import tkinter as tk
-from tkinter import filedialog, messagebox
-from io import BytesIO
-from base64 import b64decode
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field
+USE DRawDB;
+GO
 
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
-import customtkinter as ctk
-from PIL import Image, ImageTk
+CREATE TABLE Departments (
+    DepartmentID INT PRIMARY KEY,
+    DepartmentName VARCHAR(50)
+);
 
+CREATE TABLE Employees (
+    EmployeeID INT PRIMARY KEY,
+    EmployeeName VARCHAR(100),
+    Age INT,
+    Salary DECIMAL(10,2),
+    DepartmentID INT,
+    JoiningDate DATE,
+    FOREIGN KEY (DepartmentID)
+        REFERENCES Departments(DepartmentID)
+);
 
-# ╔════════════════════════════════════════════════════════════════════╗
-# ║                        CONFIGURATION                              ║
-# ╚════════════════════════════════════════════════════════════════════╝
+INSERT INTO Departments VALUES
+(1, 'IT'),
+(2, 'HR'),
+(3, 'Finance'),
+(4, 'Marketing');
 
-# ── OneDrive Copilot Integration ─────────────────────────────────
-COPILOT_REQUEST_FOLDER = os.path.join(
-    os.path.expanduser("~"),
-    "OneDrive - IQVIA", "InsightIQ", "requests"
+INSERT INTO Employees VALUES
+(101, 'Arun', 25, 45000, 1, '2024-01-15'),
+(102, 'Priya', 28, 55000, 1, '2023-06-10'),
+(103, 'Rahul', 30, 40000, 2, '2022-03-20'),
+(104, 'Sneha', 27, 60000, 3, '2021-11-05'),
+(105, 'Vishnu', 24, 35000, 2, '2025-02-01'),
+(106, 'Anjali', 29, 70000, 3, '2020-08-12'),
+(107, 'Akhil', 26, 50000, 1, '2024-09-18'),
+(108, 'Meera', 31, 65000, 4, '2019-05-25');
+
+SELECT * FROM Employees;
+
+SELECT *
+FROM Employees
+WHERE Salary > 45000;
+
+SELECT *
+FROM Employees
+ORDER BY Salary DESC;
+
+SELECT TOP 3 *
+FROM Employees
+ORDER BY Salary DESC;
+
+SELECT COUNT(*) AS TotalEmployees
+FROM Employees;
+
+SELECT
+    DepartmentID,
+    COUNT(*) AS TotalEmployees,
+    AVG(Salary) AS AverageSalary,
+    SUM(Salary) AS TotalSalary
+FROM Employees
+GROUP BY DepartmentID;
+
+SELECT
+    DepartmentID,
+    AVG(Salary) AS AverageSalary
+FROM Employees
+GROUP BY DepartmentID
+HAVING AVG(Salary) > 45000;
+
+SELECT
+    E.EmployeeName,
+    E.Salary,
+    D.DepartmentName
+FROM Employees E
+INNER JOIN Departments D
+    ON E.DepartmentID = D.DepartmentID;
+
+SELECT
+    D.DepartmentName,
+    E.EmployeeName
+FROM Departments D
+LEFT JOIN Employees E
+    ON D.DepartmentID = E.DepartmentID;
+
+SELECT
+    EmployeeName,
+    Salary,
+    DepartmentID
+FROM Employees E
+WHERE Salary > (
+    SELECT AVG(Salary)
+    FROM Employees
+    WHERE DepartmentID = E.DepartmentID
+);
+
+UPDATE Employees
+SET Salary = 50000
+WHERE EmployeeID = 101;
+
+ALTER TABLE Employees
+ADD Email VARCHAR(100);
+
+UPDATE Employees
+SET Email = 'arun@company.com'
+WHERE EmployeeID = 101;
+
+SELECT
+    EmployeeName,
+    Salary,
+    CASE
+        WHEN Salary >= 60000 THEN 'High Salary'
+        WHEN Salary >= 40000 THEN 'Medium Salary'
+        ELSE 'Low Salary'
+    END AS SalaryCategory
+FROM Employees;
+
+WITH SalaryRanking AS (
+    SELECT
+        EmployeeName,
+        DepartmentID,
+        Salary,
+        DENSE_RANK() OVER (
+            PARTITION BY DepartmentID
+            ORDER BY Salary DESC
+        ) AS SalaryRank
+    FROM Employees
 )
-COPILOT_RESPONSE_FOLDER = os.path.join(
-    os.path.expanduser("~"),
-    "OneDrive - IQVIA", "InsightIQ", "responses"
-)
-COPILOT_TIMEOUT = 120
-COPILOT_POLL_INTERVAL = 3
-
-# ── App Settings ─────────────────────────────────────────────────
-APP_NAME = "Insight IQ"
-APP_VERSION = "2.0.0"
-APP_SUBTITLE = "AI-Intelligent Report Validation & Insights Generator"
-
-# ── Theme Colors (IQVIA-inspired) ────────────────────────────────
-COLOR_PRIMARY = "#0033A0"
-COLOR_PRIMARY_DARK = "#002266"
-COLOR_ACCENT = "#00B4D8"
-COLOR_SUCCESS = "#2E7D32"
-COLOR_WARNING = "#F57C00"
-COLOR_DANGER = "#C62828"
-COLOR_BG_DARK = "#1A1A2E"
-COLOR_BG_CARD = "#16213E"
-COLOR_BG_SIDEBAR = "#0F3460"
-COLOR_TEXT = "#E8E8E8"
-COLOR_TEXT_MUTED = "#9E9E9E"
-
-
-# ╔════════════════════════════════════════════════════════════════════╗
-# ║                      COPILOT BRIDGE                               ║
-# ╚════════════════════════════════════════════════════════════════════╝
-
-def _get_username():
-    try:
-        return os.getlogin()
-    except OSError:
-        return getpass.getuser()
-
-
-def _make_timestamp():
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def send_request(prompt_text: str) -> str:
-    os.makedirs(COPILOT_REQUEST_FOLDER, exist_ok=True)
-    username = _get_username()
-    ts = _make_timestamp()
-    filename = f"request_{username}_{ts}.txt"
-    filepath = os.path.join(COPILOT_REQUEST_FOLDER, filename)
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(prompt_text)
-    return ts
-
-
-def wait_for_response(timestamp: str, timeout: int = None) -> str | None:
-    if timeout is None:
-        timeout = COPILOT_TIMEOUT
-    username = _get_username()
-    pattern = os.path.join(
-        COPILOT_RESPONSE_FOLDER,
-        f"response_{username}_{timestamp}*.txt",
-    )
-    start = time.time()
-    while time.time() - start < timeout:
-        matches = glob.glob(pattern)
-        if matches:
-            with open(matches[0], "r", encoding="utf-8") as f:
-                return f.read().strip()
-        time.sleep(COPILOT_POLL_INTERVAL)
-    return None
-
-
-def send_and_wait(prompt_text: str, timeout: int = None) -> str | None:
-    ts = send_request(prompt_text)
-    return wait_for_response(ts, timeout)
-
-
-def check_folders_exist() -> tuple[bool, str]:
-    issues = []
-    if not os.path.isdir(COPILOT_REQUEST_FOLDER):
-        issues.append(f"Request folder not found:\n{COPILOT_REQUEST_FOLDER}")
-    if not os.path.isdir(COPILOT_RESPONSE_FOLDER):
-        issues.append(f"Response folder not found:\n{COPILOT_RESPONSE_FOLDER}")
-    if issues:
-        return False, "\n\n".join(issues)
-    return True, "Copilot folders are ready."
-
-
-# ╔════════════════════════════════════════════════════════════════════╗
-# ║                      ANALYSIS ENGINE                              ║
-# ╚════════════════════════════════════════════════════════════════════╝
-
-# ── File Detection ───────────────────────────────────────────────
-
-@dataclass
-class ReportFile:
-    path: str
-    name: str
-    base_name: str
-    date_str: str
-    report_date: datetime
-    frequency: str  # "monthly" or "weekly"
-
-
-def _parse_date_suffix(name_no_ext: str) -> tuple[str, str, datetime, str] | None:
-    # Try weekly first (6 digits: MMDDYY)
-    m = re.match(r"^(.+?)_(\d{6})$", name_no_ext)
-    if m:
-        base, ds = m.group(1), m.group(2)
-        try:
-            dt = datetime.strptime(ds, "%m%d%y")
-            return base, ds, dt, "weekly"
-        except ValueError:
-            pass
-    # Try monthly (4 digits: MMYY)
-    m = re.match(r"^(.+?)_(\d{4})$", name_no_ext)
-    if m:
-        base, ds = m.group(1), m.group(2)
-        try:
-            dt = datetime.strptime(ds, "%m%y")
-            return base, ds, dt, "monthly"
-        except ValueError:
-            pass
-    return None
-
-
-def scan_folder(folder_path: str) -> dict[str, list[ReportFile]]:
-    groups: dict[str, list[ReportFile]] = {}
-    if not os.path.isdir(folder_path):
-        return groups
-    for fname in os.listdir(folder_path):
-        if not fname.lower().endswith((".xlsx", ".xls", ".xlsm")):
-            continue
-        name_no_ext = os.path.splitext(fname)[0]
-        parsed = _parse_date_suffix(name_no_ext)
-        if parsed is None:
-            continue
-        base, ds, dt, freq = parsed
-        rf = ReportFile(
-            path=os.path.join(folder_path, fname),
-            name=fname, base_name=base,
-            date_str=ds, report_date=dt, frequency=freq,
-        )
-        groups.setdefault(base, []).append(rf)
-    for base in groups:
-        groups[base].sort(key=lambda r: r.report_date, reverse=True)
-    return groups
-
-
-def get_compare_options(frequency: str) -> list[str]:
-    if frequency == "monthly":
-        return ["Last month", "Last 3 months", "Last 6 months", "Custom"]
-    else:
-        return ["Last week", "Last 4 weeks", "Last 6 weeks", "Custom"]
-
-
-# ── Data Reading ─────────────────────────────────────────────────
-
-def read_report(filepath: str) -> dict[str, pd.DataFrame]:
-    raw = pd.read_excel(filepath, sheet_name=None, engine="openpyxl")
-    cleaned = {}
-    for name, df in raw.items():
-        df = df.dropna(how="all").dropna(axis=1, how="all")
-        for col in df.columns:
-            if df[col].dtype == object:
-                converted = pd.to_numeric(df[col], errors="coerce")
-                if converted.notna().sum() > 0.5 * df[col].notna().sum():
-                    df[col] = converted
-        num_cols = df.select_dtypes(include=[np.number]).columns
-        if len(num_cols) > 0:
-            df = df.dropna(subset=num_cols, how="all")
-        if not df.empty:
-            cleaned[name] = df.reset_index(drop=True)
-    return cleaned
-
-
-def get_numeric_columns(df: pd.DataFrame) -> list[str]:
-    return df.select_dtypes(include=[np.number]).columns.tolist()
-
-
-# ── ML Comparison ────────────────────────────────────────────────
-
-@dataclass
-class ComparisonResult:
-    sheet_name: str
-    current_file: str
-    previous_file: str
-    summary: dict = field(default_factory=dict)
-    anomalies: list = field(default_factory=list)
-    variance_data: pd.DataFrame = None
-    charts: list = field(default_factory=list)
-
-
-def compare_reports(current_path: str, previous_path: str) -> list[ComparisonResult]:
-    current_sheets = read_report(current_path)
-    previous_sheets = read_report(previous_path)
-    results = []
-
-    common_sheets = set(current_sheets.keys()) & set(previous_sheets.keys())
-    for sheet in sorted(common_sheets):
-        df_curr = current_sheets[sheet]
-        df_prev = previous_sheets[sheet]
-
-        num_cols = list(
-            set(get_numeric_columns(df_curr)) & set(get_numeric_columns(df_prev))
-        )
-        if not num_cols:
-            continue
-
-        result = ComparisonResult(
-            sheet_name=sheet,
-            current_file=os.path.basename(current_path),
-            previous_file=os.path.basename(previous_path),
-        )
-
-        curr_sums = df_curr[num_cols].sum()
-        prev_sums = df_prev[num_cols].sum()
-        variance = curr_sums - prev_sums
-        pct_change = ((curr_sums - prev_sums) / prev_sums.replace(0, np.nan) * 100).fillna(0)
-
-        result.variance_data = pd.DataFrame({
-            "Column": num_cols,
-            "Current": curr_sums.values,
-            "Previous": prev_sums.values,
-            "Variance": variance.values,
-            "% Change": pct_change.values.round(2),
-        })
-
-        result.summary = {
-            "total_columns": len(num_cols),
-            "increased": int((variance > 0).sum()),
-            "decreased": int((variance < 0).sum()),
-            "unchanged": int((variance == 0).sum()),
-            "max_increase_col": num_cols[variance.values.argmax()] if len(num_cols) > 0 else "N/A",
-            "max_decrease_col": num_cols[variance.values.argmin()] if len(num_cols) > 0 else "N/A",
-            "max_increase_pct": float(pct_change.max()),
-            "max_decrease_pct": float(pct_change.min()),
-        }
-
-        if len(num_cols) >= 2 and len(df_curr) > 5:
-            try:
-                scaler = StandardScaler()
-                curr_scaled = scaler.fit_transform(df_curr[num_cols].fillna(0))
-                iso = IsolationForest(contamination=0.1, random_state=42)
-                labels = iso.fit_predict(curr_scaled)
-                anomaly_rows = df_curr[labels == -1]
-                result.anomalies = anomaly_rows.head(10).to_dict("records")
-            except Exception:
-                result.anomalies = []
-
-        results.append(result)
-    return results
-
-
-# ── Threshold Detection ──────────────────────────────────────────
-
-def compute_threshold(files: list[str], sheet_name: str = None) -> dict[str, tuple[float, float, float]]:
-    all_sums = {}
-    for fpath in files:
-        sheets = read_report(fpath)
-        for sname, df in sheets.items():
-            if sheet_name and sname != sheet_name:
-                continue
-            for col in get_numeric_columns(df):
-                key = f"{sname}__{col}"
-                all_sums.setdefault(key, []).append(df[col].sum())
-    thresholds = {}
-    for key, values in all_sums.items():
-        arr = np.array(values)
-        mean = arr.mean()
-        std = arr.std()
-        thresholds[key] = (mean, mean + 2 * std, mean - 2 * std)
-    return thresholds
-
-
-def check_threshold_breaches(current_path: str, threshold_files: list[str]) -> list[dict]:
-    thresholds = compute_threshold(threshold_files)
-    current_sheets = read_report(current_path)
-    breaches = []
-    for sname, df in current_sheets.items():
-        for col in get_numeric_columns(df):
-            key = f"{sname}__{col}"
-            if key not in thresholds:
-                continue
-            mean, upper, lower = thresholds[key]
-            current_val = df[col].sum()
-            if current_val > upper:
-                breaches.append({
-                    "sheet": sname, "column": col,
-                    "current": round(current_val, 2), "mean": round(mean, 2),
-                    "upper_threshold": round(upper, 2), "direction": "above",
-                    "deviation_pct": round((current_val - mean) / mean * 100 if mean != 0 else 0, 2),
-                })
-            elif current_val < lower:
-                breaches.append({
-                    "sheet": sname, "column": col,
-                    "current": round(current_val, 2), "mean": round(mean, 2),
-                    "lower_threshold": round(lower, 2), "direction": "below",
-                    "deviation_pct": round((current_val - mean) / mean * 100 if mean != 0 else 0, 2),
-                })
-    return breaches
-
-
-# ── Chart Generation ─────────────────────────────────────────────
-
-def _fig_to_base64(fig) -> str:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=120, bbox_inches="tight",
-                facecolor="#1A1A2E", edgecolor="none")
-    buf.seek(0)
-    b64 = base64.b64encode(buf.read()).decode("utf-8")
-    plt.close(fig)
-    return b64
-
-
-def generate_variance_chart(result: ComparisonResult) -> str:
-    sns.set_theme(style="darkgrid")
-    df = result.variance_data
-    if df is None or df.empty:
-        return ""
-    df_sorted = df.reindex(df["Variance"].abs().sort_values(ascending=False).index)
-    df_plot = df_sorted.head(10)
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    fig.patch.set_facecolor("#1A1A2E")
-    ax.set_facecolor("#16213E")
-    x = np.arange(len(df_plot))
-    width = 0.35
-    ax.bar(x - width / 2, df_plot["Previous"], width, label="Previous", color="#00B4D8", alpha=0.85)
-    ax.bar(x + width / 2, df_plot["Current"], width, label="Current", color="#0033A0", alpha=0.85)
-    ax.set_xticks(x)
-    ax.set_xticklabels(df_plot["Column"], rotation=45, ha="right", color="#E8E8E8", fontsize=8)
-    ax.set_ylabel("Value", color="#E8E8E8")
-    ax.set_title(f"Current vs Previous - {result.sheet_name}", color="#E8E8E8", fontsize=12, fontweight="bold")
-    ax.legend(facecolor="#16213E", edgecolor="#333", labelcolor="#E8E8E8")
-    ax.tick_params(colors="#9E9E9E")
-    for spine in ax.spines.values():
-        spine.set_color("#333")
-    return _fig_to_base64(fig)
-
-
-def generate_pct_change_chart(result: ComparisonResult) -> str:
-    sns.set_theme(style="darkgrid")
-    df = result.variance_data
-    if df is None or df.empty:
-        return ""
-    df_sorted = df.reindex(df["% Change"].abs().sort_values(ascending=False).index)
-    df_plot = df_sorted.head(10)
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    fig.patch.set_facecolor("#1A1A2E")
-    ax.set_facecolor("#16213E")
-    colors = ["#C62828" if v < 0 else "#2E7D32" for v in df_plot["% Change"]]
-    ax.barh(df_plot["Column"], df_plot["% Change"], color=colors, alpha=0.85)
-    ax.set_xlabel("% Change", color="#E8E8E8")
-    ax.set_title(f"Percentage Change - {result.sheet_name}", color="#E8E8E8", fontsize=12, fontweight="bold")
-    ax.tick_params(colors="#9E9E9E")
-    ax.invert_yaxis()
-    for spine in ax.spines.values():
-        spine.set_color("#333")
-    return _fig_to_base64(fig)
-
-
-def generate_anomaly_heatmap(result: ComparisonResult) -> str:
-    sns.set_theme(style="darkgrid")
-    df = result.variance_data
-    if df is None or df.empty or len(df) < 2:
-        return ""
-    fig, ax = plt.subplots(figsize=(10, 4))
-    fig.patch.set_facecolor("#1A1A2E")
-    heat_data = df[["Column", "Variance", "% Change"]].set_index("Column").T
-    sns.heatmap(
-        heat_data.head(10) if heat_data.shape[1] > 10 else heat_data,
-        annot=True, fmt=".1f", cmap="RdYlGn", center=0,
-        ax=ax, cbar_kws={"label": "Value"}, linewidths=0.5, linecolor="#333",
-    )
-    ax.set_title(f"Variance Heatmap - {result.sheet_name}", color="#E8E8E8", fontsize=12, fontweight="bold")
-    ax.tick_params(colors="#9E9E9E")
-    return _fig_to_base64(fig)
-
-
-# ── Copilot Prompt Builders ──────────────────────────────────────
-
-def build_chart_description_prompt(result: ComparisonResult, chart_type: str) -> str:
-    df = result.variance_data
-    if df is None or df.empty:
-        return ""
-    top_changes = df.nlargest(3, "Variance", keep="first")
-    bottom_changes = df.nsmallest(3, "Variance", keep="first")
-    top_str = ", ".join(
-        f"{r[0]} (+{r[1]:.1f}%)" for r in zip(top_changes["Column"], top_changes["% Change"])
-    )
-    bot_str = ", ".join(
-        f"{r[0]} ({r[1]:.1f}%)" for r in zip(bottom_changes["Column"], bottom_changes["% Change"])
-    )
-    prompt = (
-        f"You are a data analyst assistant. "
-        f"Describe the following {chart_type} chart in 2-3 sentences for a stakeholder report.\n\n"
-        f"Chart: Comparing current period vs previous period for sheet '{result.sheet_name}'.\n"
-        f"Top increases: {top_str}.\n"
-        f"Top decreases: {bot_str}.\n"
-        f"Total columns compared: {len(df)}. "
-        f"Increased: {result.summary.get('increased', 0)}, "
-        f"Decreased: {result.summary.get('decreased', 0)}.\n\n"
-        f"Write a concise, professional description."
-    )
-    return prompt
-
-
-def build_threshold_breach_prompt(breaches: list[dict]) -> str:
-    if not breaches:
-        return ""
-    lines = []
-    for b in breaches[:5]:
-        lines.append(
-            f"- Column '{b['column']}' in sheet '{b['sheet']}' is "
-            f"{b['deviation_pct']}% {b['direction']} the historical average "
-            f"(current: {b['current']}, avg: {b['mean']})."
-        )
-    prompt = (
-        "You are a business analyst. The following data columns have crossed "
-        "their historical threshold (mean +/- 2 standard deviations) compared "
-        "to the last 3 reporting periods:\n\n"
-        + "\n".join(lines)
-        + "\n\nFor each breach, suggest a possible business reason "
-        "(market event, seasonality, data issue) in 1-2 sentences. "
-        "Be specific about what could have caused the change."
-    )
-    return prompt
-
-
-def build_summary_prompt(results: list[ComparisonResult], breaches: list[dict]) -> str:
-    sections = []
-    for r in results:
-        s = r.summary
-        sections.append(
-            f"Sheet '{r.sheet_name}': {s.get('total_columns', 0)} columns compared. "
-            f"{s.get('increased', 0)} increased, {s.get('decreased', 0)} decreased. "
-            f"Largest increase: {s.get('max_increase_col', 'N/A')} ({s.get('max_increase_pct', 0):.1f}%). "
-            f"Largest decrease: {s.get('max_decrease_col', 'N/A')} ({s.get('max_decrease_pct', 0):.1f}%)."
-        )
-    breach_lines = []
-    for b in breaches[:5]:
-        breach_lines.append(f"- {b['column']} ({b['sheet']}): {b['deviation_pct']}% {b['direction']} average")
-    prompt = (
-        "Write a professional stakeholder summary email (3-4 paragraphs) "
-        "based on the following report comparison results:\n\n"
-        "COMPARISON RESULTS:\n" + "\n".join(sections) + "\n\n"
-    )
-    if breach_lines:
-        prompt += "THRESHOLD BREACHES:\n" + "\n".join(breach_lines) + "\n\n"
-    prompt += (
-        "Include: key findings, areas of concern, and recommended next steps. "
-        "Use a professional tone suitable for senior management."
-    )
-    return prompt
-
-
-# ╔════════════════════════════════════════════════════════════════════╗
-# ║                        APPLICATION UI                             ║
-# ╚════════════════════════════════════════════════════════════════════╝
-
-# ── Extended palette for the new design ──────────────────────────
-COLOR_BG_LIGHT = "#F0F2F5"
-COLOR_BG_WHITE = "#FFFFFF"
-COLOR_CARD_BORDER = "#E2E8F0"
-COLOR_TEXT_DARK = "#1E293B"
-COLOR_TEXT_SECONDARY = "#64748B"
-COLOR_PRIMARY_LIGHT = "#EBF0FF"
-COLOR_SUCCESS_LIGHT = "#ECFDF5"
-COLOR_DANGER_LIGHT = "#FEF2F2"
-COLOR_WARNING_LIGHT = "#FFFBEB"
-COLOR_SIDEBAR_BG = "#FFFFFF"
-COLOR_SIDEBAR_ACTIVE = "#EBF0FF"
-COLOR_NAV_HOVER = "#F1F5F9"
-
-ctk.set_appearance_mode("light")
-ctk.set_default_color_theme("blue")
-
-
-class InsightIQApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-
-        self.title(f"{APP_NAME} v{APP_VERSION}")
-        self.geometry("1400x900")
-        self.minsize(1100, 750)
-        self.configure(fg_color=COLOR_BG_LIGHT)
-
-        # State
-        self.project_folder = None
-        self.report_groups = {}
-        self.selected_group = None
-        self.analysis_results = []
-        self.breaches = []
-        self.copilot_descriptions = {}
-        self.summary_text = ""
-        self._chart_images = []
-
-        # Layout
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        self._build_sidebar()
-        self._build_main_area()
-        self._show_page("data_analysis")
-
-    # ── Sidebar ──────────────────────────────────────────────────
-
-    def _build_sidebar(self):
-        self.sidebar = ctk.CTkFrame(self, width=250, corner_radius=0,
-                                    fg_color=COLOR_SIDEBAR_BG, border_width=0)
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_propagate(False)
-
-        # App logo row
-        logo_row = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        logo_row.pack(fill="x", padx=16, pady=(20, 2))
-
-        ctk.CTkLabel(
-            logo_row, text="▁▃▅",
-            font=ctk.CTkFont(size=18, weight="bold"), text_color=COLOR_PRIMARY,
-        ).pack(side="left", padx=(0, 6))
-
-        ctk.CTkLabel(
-            logo_row, text="Insight IQ",
-            font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"),
-            text_color=COLOR_TEXT_DARK,
-        ).pack(side="left")
-
-        ctk.CTkLabel(
-            self.sidebar, text="AI-Powered Report Validation\n& Insights Generator",
-            font=ctk.CTkFont(size=9), text_color=COLOR_TEXT_SECONDARY,
-            justify="left",
-        ).pack(anchor="w", padx=18, pady=(0, 14))
-
-        # Browse button
-        self.browse_btn = ctk.CTkButton(
-            self.sidebar, text="+   Browse Project Folder",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=COLOR_PRIMARY, hover_color=COLOR_PRIMARY_DARK,
-            text_color="white", height=40, corner_radius=8,
-            command=self._browse_folder,
-        )
-        self.browse_btn.pack(fill="x", padx=16, pady=(0, 8))
-
-        # Current project section
-        ctk.CTkLabel(
-            self.sidebar, text="CURRENT PROJECT",
-            font=ctk.CTkFont(size=9, weight="bold"), text_color=COLOR_TEXT_SECONDARY,
-        ).pack(anchor="w", padx=20, pady=(4, 2))
-
-        proj_row = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        proj_row.pack(fill="x", padx=16, pady=(0, 12))
-
-        self.folder_label = ctk.CTkLabel(
-            proj_row, text="No folder selected",
-            font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_PRIMARY,
-        )
-        self.folder_label.pack(side="left", padx=(4, 0))
-
-        # Divider
-        ctk.CTkFrame(self.sidebar, height=1, fg_color=COLOR_CARD_BORDER).pack(fill="x", padx=16, pady=(0, 10))
-
-        # Navigation label
-        ctk.CTkLabel(
-            self.sidebar, text="MAIN NAVIGATION",
-            font=ctk.CTkFont(size=9, weight="bold"), text_color=COLOR_TEXT_SECONDARY,
-        ).pack(anchor="w", padx=20, pady=(0, 6))
-
-        # Nav buttons with icons
-        self.nav_buttons = {}
-        nav_icons = {"qc": "✔", "data_analysis": "▓", "chatbot": "✉"}
-        nav_labels = {"qc": "QC Checking", "data_analysis": "Data Analysis", "chatbot": "Chatbot Assistant"}
-        for key in ("qc", "data_analysis", "chatbot"):
-            btn = ctk.CTkButton(
-                self.sidebar, text=f"  {nav_icons[key]}   {nav_labels[key]}",
-                font=ctk.CTkFont(size=12),
-                fg_color="transparent", hover_color=COLOR_NAV_HOVER,
-                text_color=COLOR_TEXT_DARK,
-                height=40, corner_radius=8, anchor="w",
-                command=lambda k=key: self._show_page(k),
-            )
-            btn.pack(fill="x", padx=10, pady=1)
-            self.nav_buttons[key] = btn
-
-        # Spacer
-        ctk.CTkFrame(self.sidebar, fg_color="transparent").pack(fill="both", expand=True)
-
-        # AI Assistant card
-        ai_card = ctk.CTkFrame(self.sidebar, fg_color=COLOR_PRIMARY_LIGHT, corner_radius=12,
-                               border_width=1, border_color=COLOR_CARD_BORDER)
-        ai_card.pack(fill="x", padx=14, pady=(0, 10))
-
-        ctk.CTkLabel(ai_card, text="✨  AI Assistant",
-                     font=ctk.CTkFont(size=12, weight="bold"),
-                     text_color=COLOR_PRIMARY).pack(anchor="w", padx=14, pady=(12, 2))
-
-        ctk.CTkLabel(ai_card, text="Ask questions and get\nAI-powered insights.",
-                     font=ctk.CTkFont(size=10), text_color=COLOR_TEXT_SECONDARY,
-                     justify="left").pack(anchor="w", padx=14, pady=(0, 4))
-
-        ctk.CTkButton(ai_card, text="Open Assistant  >",
-                      font=ctk.CTkFont(size=10, weight="bold"),
-                      fg_color="transparent", hover_color=COLOR_SIDEBAR_ACTIVE,
-                      text_color=COLOR_PRIMARY, height=28, anchor="w",
-                      command=lambda: self._show_page("chatbot"),
-                      ).pack(anchor="w", padx=10, pady=(0, 10))
-
-        # User profile row
-        ctk.CTkFrame(self.sidebar, height=1, fg_color=COLOR_CARD_BORDER).pack(fill="x", padx=16, pady=(0, 8))
-
-        user_row = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        user_row.pack(fill="x", padx=16, pady=(0, 4))
-
-        user_badge = ctk.CTkFrame(user_row, width=32, height=32, corner_radius=16,
-                                  fg_color=COLOR_PRIMARY)
-        user_badge.pack(side="left")
-        user_badge.pack_propagate(False)
-        ctk.CTkLabel(user_badge, text="IU", font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color="white").pack(expand=True)
-
-        user_info = ctk.CTkFrame(user_row, fg_color="transparent")
-        user_info.pack(side="left", padx=(8, 0))
-        ctk.CTkLabel(user_info, text="Insight IQ User",
-                     font=ctk.CTkFont(size=11, weight="bold"),
-                     text_color=COLOR_TEXT_DARK).pack(anchor="w")
-        ctk.CTkLabel(user_info, text="Enterprise Plan",
-                     font=ctk.CTkFont(size=9), text_color=COLOR_TEXT_SECONDARY).pack(anchor="w")
-
-        # Version
-        ctk.CTkLabel(
-            self.sidebar, text=f"v{APP_VERSION}   |   IQVIA Hackathon 2026",
-            font=ctk.CTkFont(size=8), text_color=COLOR_TEXT_SECONDARY,
-        ).pack(pady=(4, 10))
-
-    # ── Main Area ────────────────────────────────────────────────
-
-    def _build_main_area(self):
-        self.main_area = ctk.CTkFrame(self, fg_color=COLOR_BG_LIGHT, corner_radius=0)
-        self.main_area.grid(row=0, column=1, sticky="nsew")
-        self.main_area.grid_columnconfigure(0, weight=1)
-        self.main_area.grid_rowconfigure(0, weight=1)
-
-        self.pages = {}
-        for key in ("qc", "data_analysis", "chatbot", "results"):
-            frame = ctk.CTkFrame(self.main_area, fg_color=COLOR_BG_LIGHT)
-            frame.grid(row=0, column=0, sticky="nsew")
-            self.pages[key] = frame
-
-        self._build_qc_page()
-        self._build_data_analysis_page()
-        self._build_chatbot_page()
-        self._build_results_page()
-
-    def _show_page(self, key):
-        for k, btn in self.nav_buttons.items():
-            if k == key:
-                btn.configure(fg_color=COLOR_SIDEBAR_ACTIVE, text_color=COLOR_PRIMARY)
-            else:
-                btn.configure(fg_color="transparent", text_color=COLOR_TEXT_DARK)
-        target = key if key in self.pages else "data_analysis"
-        self.pages[target].tkraise()
-
-    # ── Under Construction Pages ─────────────────────────────────
-
-    def _build_under_construction(self, page, title, desc):
-        page.grid_columnconfigure(0, weight=1)
-        page.grid_rowconfigure(0, weight=1)
-        card = ctk.CTkFrame(page, fg_color=COLOR_BG_WHITE, corner_radius=16,
-                            border_width=1, border_color=COLOR_CARD_BORDER)
-        card.place(relx=0.5, rely=0.45, anchor="center")
-        ctk.CTkLabel(card, text=title,
-                     font=ctk.CTkFont(size=24, weight="bold"),
-                     text_color=COLOR_TEXT_DARK).pack(padx=60, pady=(36, 6))
-        ctk.CTkLabel(card, text="Under Construction",
-                     font=ctk.CTkFont(size=14, weight="bold"),
-                     text_color=COLOR_WARNING).pack()
-        ctk.CTkLabel(card, text=desc,
-                     font=ctk.CTkFont(size=11), text_color=COLOR_TEXT_SECONDARY,
-                     justify="center", wraplength=320).pack(padx=50, pady=(8, 36))
-
-    def _build_qc_page(self):
-        self._build_under_construction(self.pages["qc"], "QC Checking",
-            "Automated QC validation is coming in the next release.\n"
-            "Compare report values against validation rules and flag discrepancies.")
-
-    def _build_chatbot_page(self):
-        self._build_under_construction(self.pages["chatbot"], "Chatbot Assistant",
-            "RAG-powered chatbot for asking questions about your reports.\n"
-            "Ask anything and get AI-generated insights.")
-
-    # ── Data Analysis Page ───────────────────────────────────────
-
-    def _build_data_analysis_page(self):
-        page = self.pages["data_analysis"]
-        page.grid_columnconfigure(0, weight=1)
-        page.grid_rowconfigure(1, weight=1)
-
-        # Header bar
-        header = ctk.CTkFrame(page, fg_color="transparent", height=70)
-        header.grid(row=0, column=0, sticky="ew", padx=28, pady=(18, 0))
-
-        title_col = ctk.CTkFrame(header, fg_color="transparent")
-        title_col.pack(side="left")
-        ctk.CTkLabel(title_col, text="Data Analysis",
-                     font=ctk.CTkFont(size=22, weight="bold"),
-                     text_color=COLOR_TEXT_DARK).pack(anchor="w")
-        ctk.CTkLabel(title_col, text="Analyze performance, detect trends, and uncover actionable insights.",
-                     font=ctk.CTkFont(size=10), text_color=COLOR_TEXT_SECONDARY).pack(anchor="w")
-
-        self.header_export_btn = ctk.CTkButton(
-            header, text="Export to Outlook",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=COLOR_BG_WHITE, hover_color=COLOR_PRIMARY_LIGHT,
-            text_color=COLOR_PRIMARY, border_width=1, border_color=COLOR_PRIMARY,
-            height=34, corner_radius=8, width=140,
-            command=self._export_to_outlook,
-        )
-        self.header_export_btn.pack(side="right", padx=(0, 4))
-
-        # Scrollable content
-        self.da_scroll = ctk.CTkScrollableFrame(page, fg_color=COLOR_BG_LIGHT, corner_radius=0)
-        self.da_scroll.grid(row=1, column=0, sticky="nsew", padx=28, pady=(10, 10))
-        self.da_scroll.grid_columnconfigure(0, weight=1)
-
-        # Prompt card (shown before folder selected)
-        self.da_prompt_card = ctk.CTkFrame(self.da_scroll, fg_color=COLOR_BG_WHITE,
-                                           corner_radius=12, border_width=1, border_color=COLOR_CARD_BORDER)
-        self.da_prompt_card.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        ctk.CTkLabel(self.da_prompt_card,
-                     text="Select a project folder to begin analysis",
-                     font=ctk.CTkFont(size=13), text_color=COLOR_TEXT_SECONDARY).pack(padx=24, pady=24)
-
-        # Containers for dynamic content
-        self.report_selector_frame = ctk.CTkFrame(self.da_scroll, fg_color="transparent")
-        self.compare_frame = ctk.CTkFrame(self.da_scroll, fg_color=COLOR_BG_WHITE,
-                                          corner_radius=12, border_width=1, border_color=COLOR_CARD_BORDER)
-        self.results_inline_frame = ctk.CTkFrame(self.da_scroll, fg_color="transparent")
-
-    def _populate_report_selector(self):
-        for w in self.report_selector_frame.winfo_children():
-            w.destroy()
-        self.da_prompt_card.grid_forget()
-
-        # Title
-        ctk.CTkLabel(self.report_selector_frame, text="Select Report Group",
-                     font=ctk.CTkFont(size=15, weight="bold"),
-                     text_color=COLOR_TEXT_DARK).pack(anchor="w", pady=(0, 10))
-
-        if not self.report_groups:
-            err_card = ctk.CTkFrame(self.report_selector_frame, fg_color=COLOR_DANGER_LIGHT,
-                                    corner_radius=10, border_width=1, border_color="#FECACA")
-            err_card.pack(fill="x", pady=(0, 10))
-            ctk.CTkLabel(err_card, text="No reports with date-suffixed filenames found.",
-                         font=ctk.CTkFont(size=11), text_color=COLOR_DANGER).pack(padx=16, pady=12)
-            self.report_selector_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-            return
-
-        # Horizontal card row
-        card_row = ctk.CTkFrame(self.report_selector_frame, fg_color="transparent")
-        card_row.pack(fill="x", pady=(0, 10))
-
-        for base_name, files in self.report_groups.items():
-            freq = files[0].frequency
-            count = len(files)
-            latest = files[0].report_date.strftime("%b %Y" if freq == "monthly" else "%b %d, %Y")
-            icon = "\U0001F4C4" if freq == "monthly" else "\U0001F4C8"
-
-            card = ctk.CTkFrame(card_row, fg_color=COLOR_BG_WHITE, corner_radius=12,
-                                border_width=1, border_color=COLOR_CARD_BORDER)
-            card.pack(side="left", fill="x", expand=True, padx=(0, 10))
-
-            inner = ctk.CTkFrame(card, fg_color="transparent")
-            inner.pack(fill="x", padx=16, pady=14)
-
-            # Icon + info row
-            top_row = ctk.CTkFrame(inner, fg_color="transparent")
-            top_row.pack(fill="x")
-
-            icon_frame = ctk.CTkFrame(top_row, width=38, height=38, corner_radius=10,
-                                      fg_color=COLOR_PRIMARY_LIGHT)
-            icon_frame.pack(side="left")
-            icon_frame.pack_propagate(False)
-            ctk.CTkLabel(icon_frame, text=icon, font=ctk.CTkFont(size=16)).pack(expand=True)
-
-            info = ctk.CTkFrame(top_row, fg_color="transparent")
-            info.pack(side="left", padx=(10, 0), fill="x", expand=True)
-
-            ctk.CTkLabel(info, text=base_name,
-                         font=ctk.CTkFont(size=13, weight="bold"),
-                         text_color=COLOR_TEXT_DARK).pack(anchor="w")
-
-            freq_text = f"{freq.capitalize()}  ·  {count} files  ·  Latest: {latest}"
-            ctk.CTkLabel(info, text=freq_text,
-                         font=ctk.CTkFont(size=9), text_color=COLOR_TEXT_SECONDARY).pack(anchor="w")
-
-            # Analyze button (outlined style)
-            ctk.CTkButton(top_row, text="▶  Analyze", width=90, height=30,
-                          font=ctk.CTkFont(size=11, weight="bold"),
-                          fg_color=COLOR_BG_WHITE, hover_color=COLOR_PRIMARY_LIGHT,
-                          text_color=COLOR_PRIMARY, border_width=1, border_color=COLOR_PRIMARY,
-                          corner_radius=6,
-                          command=lambda bn=base_name: self._select_report_group(bn)).pack(side="right")
-
-        self.report_selector_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-
-    def _select_report_group(self, base_name):
-        self.selected_group = base_name
-        files = self.report_groups[base_name]
-        freq = files[0].frequency
-
-        for w in self.compare_frame.winfo_children():
-            w.destroy()
-
-        # Header row with title and info badge
-        hdr = ctk.CTkFrame(self.compare_frame, fg_color="transparent")
-        hdr.pack(fill="x", padx=18, pady=(14, 4))
-
-        ctk.CTkLabel(hdr, text=f"Compare: {base_name}",
-                     font=ctk.CTkFont(size=15, weight="bold"),
-                     text_color=COLOR_TEXT_DARK).pack(side="left")
-
-        info_badge = ctk.CTkFrame(hdr, fg_color="transparent")
-        info_badge.pack(side="left", padx=(12, 0))
-        ctk.CTkLabel(info_badge, text="ⓘ",
-                     font=ctk.CTkFont(size=11), text_color=COLOR_TEXT_SECONDARY).pack(side="left")
-        ctk.CTkLabel(info_badge, text=f"Detected frequency: ",
-                     font=ctk.CTkFont(size=10), text_color=COLOR_TEXT_SECONDARY).pack(side="left")
-        ctk.CTkLabel(info_badge, text=freq.capitalize(),
-                     font=ctk.CTkFont(size=10, weight="bold"), text_color=COLOR_PRIMARY).pack(side="left")
-        ctk.CTkLabel(info_badge, text=f"  ·  {len(files)} files available",
-                     font=ctk.CTkFont(size=10), text_color=COLOR_TEXT_SECONDARY).pack(side="left")
-
-        # Compare option buttons
-        options = get_compare_options(freq)
-        btn_row = ctk.CTkFrame(self.compare_frame, fg_color="transparent")
-        btn_row.pack(fill="x", padx=14, pady=(6, 14))
-
-        for i, opt in enumerate(options):
-            is_first = (i == 0)
-            ctk.CTkButton(
-                btn_row, text=opt, height=36,
-                font=ctk.CTkFont(size=11, weight="bold"),
-                fg_color=COLOR_PRIMARY if is_first else COLOR_BG_WHITE,
-                hover_color=COLOR_PRIMARY_DARK if is_first else COLOR_PRIMARY_LIGHT,
-                text_color="white" if is_first else COLOR_TEXT_DARK,
-                border_width=0 if is_first else 1,
-                border_color=COLOR_CARD_BORDER,
-                corner_radius=8,
-                command=lambda o=opt: self._run_analysis(o),
-            ).pack(side="left", padx=4, expand=True, fill="x")
-
-        self.compare_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
-
-    # ── Run Analysis ─────────────────────────────────────────────
-
-    def _run_analysis(self, compare_option):
-        files = self.report_groups.get(self.selected_group)
-        if not files or len(files) < 2:
-            messagebox.showwarning("Not enough files",
-                                   "At least 2 report files are needed for comparison.")
-            return
-
-        current = files[0]
-        if "last month" in compare_option.lower() or "last week" in compare_option.lower():
-            previous = files[1] if len(files) > 1 else None
-        elif "3" in compare_option:
-            previous = files[2] if len(files) > 2 else files[-1]
-        elif "6" in compare_option:
-            previous = files[5] if len(files) > 5 else files[-1]
-        else:
-            previous = files[1]
-
-        if previous is None:
-            messagebox.showwarning("Not enough data", "Not enough files for this range.")
-            return
-
-        self._show_loading("Running ML analysis...")
-
-        def worker():
-            try:
-                results = compare_reports(current.path, previous.path)
-                self.analysis_results = results
-
-                for r in results:
-                    r.charts = []
-                    c1 = generate_variance_chart(r)
-                    if c1:
-                        r.charts.append(("Current vs Previous", c1))
-                    c2 = generate_pct_change_chart(r)
-                    if c2:
-                        r.charts.append(("Percentage Change", c2))
-                    c3 = generate_anomaly_heatmap(r)
-                    if c3:
-                        r.charts.append(("Variance Heatmap", c3))
-
-                threshold_files = [f.path for f in files[1:4]]
-                if len(threshold_files) >= 1:
-                    self.breaches = check_threshold_breaches(current.path, threshold_files)
-
-                self._update_loading("Contacting Copilot agent...")
-                ok, msg = check_folders_exist()
-                if ok:
-                    for r in results:
-                        for chart_title, _ in r.charts:
-                            prompt = build_chart_description_prompt(r, chart_title)
-                            if prompt:
-                                resp = send_and_wait(prompt, timeout=60)
-                                if resp:
-                                    self.copilot_descriptions[f"{r.sheet_name}_{chart_title}"] = resp
-
-                    if self.breaches:
-                        breach_prompt = build_threshold_breach_prompt(self.breaches)
-                        breach_resp = send_and_wait(breach_prompt, timeout=60)
-                        if breach_resp:
-                            self.copilot_descriptions["threshold_analysis"] = breach_resp
-
-                    summary_prompt = build_summary_prompt(results, self.breaches)
-                    summary_resp = send_and_wait(summary_prompt, timeout=90)
-                    if summary_resp:
-                        self.summary_text = summary_resp
-                else:
-                    self.summary_text = self._generate_local_summary(results, self.breaches)
-
-                self.after(0, self._show_results)
-            except Exception as e:
-                self.after(0, lambda: self._show_error(str(e)))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _generate_local_summary(self, results, breaches):
-        lines = [f"Report Comparison Summary - {APP_NAME}\n", "=" * 50]
-        for r in results:
-            s = r.summary
-            lines.append(f"\nSheet: {r.sheet_name}")
-            lines.append(f"  Compared: {r.current_file} vs {r.previous_file}")
-            lines.append(f"  Columns: {s['total_columns']}  (+{s['increased']} / -{s['decreased']} / ={s['unchanged']})")
-            lines.append(f"  Largest increase: {s['max_increase_col']} ({s['max_increase_pct']:.1f}%)")
-            lines.append(f"  Largest decrease: {s['max_decrease_col']} ({s['max_decrease_pct']:.1f}%)")
-        if breaches:
-            lines.append(f"\n{'=' * 50}")
-            lines.append("THRESHOLD BREACHES:")
-            for b in breaches:
-                lines.append(f"  - {b['column']} ({b['sheet']}): {b['deviation_pct']}% {b['direction']} average  (current={b['current']}, avg={b['mean']})")
-        lines.append(f"\n{'=' * 50}")
-        lines.append("Note: Copilot agent was not reachable. Connect OneDrive for AI-generated insights.")
-        return "\n".join(lines)
-
-    # ── Loading Overlay ──────────────────────────────────────────
-
-    def _show_loading(self, text="Loading..."):
-        self.loading_frame = ctk.CTkFrame(self.main_area, fg_color=COLOR_BG_LIGHT)
-        self.loading_frame.grid(row=0, column=0, sticky="nsew")
-        self.loading_frame.grid_columnconfigure(0, weight=1)
-        self.loading_frame.grid_rowconfigure(0, weight=1)
-
-        inner = ctk.CTkFrame(self.loading_frame, fg_color=COLOR_BG_WHITE, corner_radius=16,
-                             border_width=1, border_color=COLOR_CARD_BORDER)
-        inner.place(relx=0.5, rely=0.5, anchor="center")
-
-        self.loading_spinner = ctk.CTkLabel(inner, text="⏳",
-                                            font=ctk.CTkFont(size=36), text_color=COLOR_PRIMARY)
-        self.loading_spinner.pack(padx=60, pady=(30, 8))
-
-        self.loading_label = ctk.CTkLabel(inner, text=text,
-                                          font=ctk.CTkFont(size=13), text_color=COLOR_TEXT_DARK)
-        self.loading_label.pack(padx=60, pady=(0, 30))
-
-        self._animate_spinner()
-
-    def _animate_spinner(self, idx=0):
-        frames = ["◷", "◶", "◵", "◴"]
-        if hasattr(self, "loading_spinner") and self.loading_spinner.winfo_exists():
-            self.loading_spinner.configure(text=frames[idx % len(frames)])
-            self.after(200, self._animate_spinner, idx + 1)
-
-    def _update_loading(self, text):
-        if hasattr(self, "loading_label") and self.loading_label.winfo_exists():
-            self.loading_label.configure(text=text)
-
-    def _hide_loading(self):
-        if hasattr(self, "loading_frame") and self.loading_frame.winfo_exists():
-            self.loading_frame.destroy()
-
-    def _show_error(self, message):
-        self._hide_loading()
-        messagebox.showerror("Analysis Error", f"An error occurred:\n\n{message}")
-
-    # ── Results Page ─────────────────────────────────────────────
-
-    def _build_results_page(self):
-        page = self.pages["results"]
-        page.grid_columnconfigure(0, weight=1)
-        page.grid_rowconfigure(1, weight=1)
-
-        header = ctk.CTkFrame(page, fg_color="transparent", height=50)
-        header.grid(row=0, column=0, sticky="ew", padx=28, pady=(18, 0))
-
-        title_row = ctk.CTkFrame(header, fg_color="transparent")
-        title_row.pack(side="left")
-        ctk.CTkLabel(title_row, text="✨  Analysis Results (after running)",
-                     font=ctk.CTkFont(size=18, weight="bold"),
-                     text_color=COLOR_TEXT_DARK).pack(side="left")
-
-        # Share Report button
-        ctk.CTkButton(
-            header, text="↗  Share Report",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=COLOR_BG_WHITE, hover_color=COLOR_PRIMARY_LIGHT,
-            text_color=COLOR_PRIMARY, border_width=1, border_color=COLOR_PRIMARY,
-            height=32, corner_radius=8, width=120,
-            command=self._export_to_outlook,
-        ).pack(side="right")
-
-        ctk.CTkButton(
-            header, text="←  Back",
-            font=ctk.CTkFont(size=11),
-            fg_color="transparent", hover_color=COLOR_NAV_HOVER,
-            text_color=COLOR_TEXT_SECONDARY,
-            height=32, corner_radius=8, width=70,
-            command=lambda: self._show_page("data_analysis"),
-        ).pack(side="right", padx=(0, 6))
-
-        self.results_scroll = ctk.CTkScrollableFrame(page, fg_color=COLOR_BG_LIGHT)
-        self.results_scroll.grid(row=1, column=0, sticky="nsew", padx=28, pady=10)
-        self.results_scroll.grid_columnconfigure(0, weight=6)
-        self.results_scroll.grid_columnconfigure(1, weight=4)
-
-    def _show_results(self):
-        self._hide_loading()
-        self._chart_images = []
-
-        for w in self.results_scroll.winfo_children():
-            w.destroy()
-
-        # ── LEFT COLUMN: Summary + Breaches ──────────────────────
-        left_col = ctk.CTkFrame(self.results_scroll, fg_color="transparent")
-        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-
-        # Executive Summary card
-        summary_card = ctk.CTkFrame(left_col, fg_color=COLOR_BG_WHITE, corner_radius=12,
-                                    border_width=1, border_color=COLOR_CARD_BORDER)
-        summary_card.pack(fill="x", pady=(0, 10))
-
-        s_hdr = ctk.CTkFrame(summary_card, fg_color="transparent")
-        s_hdr.pack(fill="x", padx=18, pady=(14, 6))
-        ctk.CTkLabel(s_hdr, text="\U0001F4CB",
-                     font=ctk.CTkFont(size=16)).pack(side="left", padx=(0, 6))
-        ctk.CTkLabel(s_hdr, text="Executive Summary",
-                     font=ctk.CTkFont(size=14, weight="bold"),
-                     text_color=COLOR_PRIMARY).pack(side="left")
-
-        summary = self.summary_text or "Summary not available. Connect Copilot agent for AI-generated insights."
-        ctk.CTkLabel(summary_card, text=summary,
-                     font=ctk.CTkFont(size=11), text_color=COLOR_TEXT_SECONDARY,
-                     wraplength=480, justify="left").pack(anchor="w", padx=18, pady=(0, 16))
-
-        # Threshold Breaches card
-        if self.breaches:
-            breach_card = ctk.CTkFrame(left_col, fg_color=COLOR_BG_WHITE, corner_radius=12,
-                                       border_width=1, border_color=COLOR_CARD_BORDER)
-            breach_card.pack(fill="x", pady=(0, 10))
-
-            b_hdr = ctk.CTkFrame(breach_card, fg_color="transparent")
-            b_hdr.pack(fill="x", padx=18, pady=(14, 8))
-            ctk.CTkLabel(b_hdr, text="⚠",
-                         font=ctk.CTkFont(size=16)).pack(side="left", padx=(0, 6))
-            ctk.CTkLabel(b_hdr, text="Threshold Breaches",
-                         font=ctk.CTkFont(size=14, weight="bold"),
-                         text_color=COLOR_DANGER).pack(side="left")
-
-            # Breach metric tiles
-            tile_row = ctk.CTkFrame(breach_card, fg_color="transparent")
-            tile_row.pack(fill="x", padx=14, pady=(0, 6))
-
-            for b in self.breaches[:4]:
-                is_above = b["direction"] == "above"
-                tile_bg = COLOR_DANGER_LIGHT if is_above else COLOR_WARNING_LIGHT
-                val_color = COLOR_DANGER if is_above else COLOR_WARNING
-                tile = ctk.CTkFrame(tile_row, fg_color=tile_bg, corner_radius=10)
-                tile.pack(side="left", fill="x", expand=True, padx=4, pady=4)
-
-                ctk.CTkLabel(tile, text=f"{b['column']} ({b['sheet']})",
-                             font=ctk.CTkFont(size=9), text_color=COLOR_TEXT_SECONDARY).pack(anchor="w", padx=12, pady=(10, 0))
-                ctk.CTkLabel(tile, text=f"{b['deviation_pct']}%",
-                             font=ctk.CTkFont(size=20, weight="bold"),
-                             text_color=val_color).pack(anchor="w", padx=12)
-                ctk.CTkLabel(tile, text=f"{b['direction']} average",
-                             font=ctk.CTkFont(size=9), text_color=COLOR_TEXT_SECONDARY).pack(anchor="w", padx=12, pady=(0, 10))
-
-            # Copilot root-cause description
-            breach_desc = self.copilot_descriptions.get("threshold_analysis", "")
-            if breach_desc:
-                ctk.CTkLabel(breach_card, text="Copilot root-cause analysis:",
-                             font=ctk.CTkFont(size=10, weight="bold"),
-                             text_color=COLOR_TEXT_SECONDARY).pack(anchor="w", padx=18, pady=(4, 0))
-                ctk.CTkLabel(breach_card, text=breach_desc,
-                             font=ctk.CTkFont(size=10), text_color=COLOR_TEXT_SECONDARY,
-                             wraplength=480, justify="left").pack(anchor="w", padx=18, pady=(2, 14))
-            else:
-                ctk.CTkFrame(breach_card, height=8, fg_color="transparent").pack()
-
-        # ── RIGHT COLUMN: Charts ─────────────────────────────────
-        right_col = ctk.CTkFrame(self.results_scroll, fg_color="transparent")
-        right_col.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-
-        chart_subtitles = {
-            "Current vs Previous": "Seasonality-adjusted comparison",
-            "Percentage Change": "Period-over-period % change",
-            "Variance Heatmap": "Category variance overview",
-        }
-
-        for r in self.analysis_results:
-            for chart_title, chart_b64 in r.charts:
-                chart_card = ctk.CTkFrame(right_col, fg_color=COLOR_BG_WHITE,
-                                          corner_radius=12, border_width=1,
-                                          border_color=COLOR_CARD_BORDER)
-                chart_card.pack(fill="x", pady=(0, 10))
-
-                # Chart header with title + badge
-                c_hdr = ctk.CTkFrame(chart_card, fg_color="transparent")
-                c_hdr.pack(fill="x", padx=14, pady=(12, 4))
-
-                title_info = ctk.CTkFrame(c_hdr, fg_color="transparent")
-                title_info.pack(side="left")
-                ctk.CTkLabel(title_info, text=f"{chart_title} - {r.sheet_name}",
-                             font=ctk.CTkFont(size=12, weight="bold"),
-                             text_color=COLOR_TEXT_DARK).pack(anchor="w")
-                sub = chart_subtitles.get(chart_title, "")
-                if sub:
-                    ctk.CTkLabel(title_info, text=sub,
-                                 font=ctk.CTkFont(size=9),
-                                 text_color=COLOR_TEXT_SECONDARY).pack(anchor="w")
-
-                # % change badge
-                if r.summary.get("max_increase_pct"):
-                    pct = r.summary["max_increase_pct"]
-                    badge_color = COLOR_SUCCESS if pct > 0 else COLOR_DANGER
-                    badge_bg = COLOR_SUCCESS_LIGHT if pct > 0 else COLOR_DANGER_LIGHT
-                    arrow = "▲" if pct > 0 else "▼"
-                    badge = ctk.CTkFrame(c_hdr, fg_color=badge_bg, corner_radius=6)
-                    badge.pack(side="right")
-                    ctk.CTkLabel(badge, text=f"  {arrow} {abs(pct):.1f}%  ",
-                                 font=ctk.CTkFont(size=10, weight="bold"),
-                                 text_color=badge_color).pack(padx=2, pady=2)
-
-                # Chart image
-                try:
-                    img_data = b64decode(chart_b64)
-                    pil_img = Image.open(BytesIO(img_data))
-                    max_w = 420
-                    ratio = max_w / pil_img.width
-                    new_size = (max_w, int(pil_img.height * ratio))
-                    pil_img = pil_img.resize(new_size, Image.LANCZOS)
-
-                    tk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=new_size)
-                    self._chart_images.append(tk_img)
-                    img_label = ctk.CTkLabel(chart_card, image=tk_img, text="")
-                    img_label.pack(padx=10, pady=(4, 2))
-                except Exception:
-                    ctk.CTkLabel(chart_card, text="[Chart could not be rendered]",
-                                 text_color=COLOR_DANGER).pack(padx=14, pady=8)
-
-                # Copilot description area for this chart
-                desc_key = f"{r.sheet_name}_{chart_title}"
-                desc = self.copilot_descriptions.get(desc_key, "")
-
-                desc_frame = ctk.CTkFrame(chart_card, fg_color="#F8FAFC", corner_radius=8)
-                desc_frame.pack(fill="x", padx=12, pady=(4, 12))
-
-                ctk.CTkLabel(desc_frame, text="AI Insight:",
-                             font=ctk.CTkFont(size=9, weight="bold"),
-                             text_color=COLOR_PRIMARY).pack(anchor="w", padx=10, pady=(8, 0))
-
-                if desc:
-                    ctk.CTkLabel(desc_frame, text=desc,
-                                 font=ctk.CTkFont(size=9),
-                                 text_color=COLOR_TEXT_SECONDARY,
-                                 wraplength=380, justify="left").pack(anchor="w", padx=10, pady=(2, 8))
-                else:
-                    ctk.CTkLabel(desc_frame,
-                                 text="Copilot description will appear here when connected.",
-                                 font=ctk.CTkFont(size=9),
-                                 text_color="#CBD5E1").pack(anchor="w", padx=10, pady=(2, 8))
-
-        # ── KEY INSIGHTS ROW (bottom, full width) ────────────────
-        insights_row_idx = 1
-        ctk.CTkLabel(self.results_scroll, text="Key Insights",
-                     font=ctk.CTkFont(size=15, weight="bold"),
-                     text_color=COLOR_TEXT_DARK).grid(row=insights_row_idx, column=0,
-                                                       columnspan=2, sticky="w", pady=(10, 6))
-        insights_row_idx += 1
-
-        insights_container = ctk.CTkFrame(self.results_scroll, fg_color="transparent")
-        insights_container.grid(row=insights_row_idx, column=0, columnspan=2, sticky="ew")
-
-        # Build insight cards from analysis data
-        insight_cards = []
-        for r in self.analysis_results:
-            s = r.summary
-            if s.get("max_increase_col") and s["max_increase_col"] != "N/A":
-                insight_cards.append({
-                    "label": "Top Growth Driver", "value": s["max_increase_col"],
-                    "metric": f"↑ {s['max_increase_pct']:.1f}%", "sub": "vs last period",
-                    "color": COLOR_SUCCESS, "bg": COLOR_SUCCESS_LIGHT,
-                })
-            if s.get("max_decrease_col") and s["max_decrease_col"] != "N/A":
-                insight_cards.append({
-                    "label": "Largest Decline", "value": s["max_decrease_col"],
-                    "metric": f"↓ {s['max_decrease_pct']:.1f}%", "sub": "vs last period",
-                    "color": COLOR_DANGER, "bg": COLOR_DANGER_LIGHT,
-                })
-        # Add data quality card
-        insight_cards.append({
-            "label": "Data Quality", "value": "Analysis Complete",
-            "metric": f"{len(self.analysis_results)} sheets",
-            "sub": "High confidence",
-            "color": COLOR_PRIMARY, "bg": COLOR_PRIMARY_LIGHT,
-        })
-
-        for ic in insight_cards[:4]:
-            tile = ctk.CTkFrame(insights_container, fg_color=COLOR_BG_WHITE,
-                                corner_radius=12, border_width=1, border_color=COLOR_CARD_BORDER)
-            tile.pack(side="left", fill="x", expand=True, padx=(0, 8), pady=(0, 10))
-
-            inner = ctk.CTkFrame(tile, fg_color="transparent")
-            inner.pack(fill="x", padx=14, pady=12)
-
-            # Color tag
-            tag = ctk.CTkFrame(inner, fg_color=ic["bg"], corner_radius=4)
-            tag.pack(anchor="w")
-            ctk.CTkLabel(tag, text=f"  {ic['label']}  ",
-                         font=ctk.CTkFont(size=8, weight="bold"),
-                         text_color=ic["color"]).pack(padx=2, pady=2)
-
-            ctk.CTkLabel(inner, text=ic["value"],
-                         font=ctk.CTkFont(size=13, weight="bold"),
-                         text_color=COLOR_TEXT_DARK).pack(anchor="w", pady=(4, 0))
-            ctk.CTkLabel(inner, text=ic["metric"],
-                         font=ctk.CTkFont(size=16, weight="bold"),
-                         text_color=ic["color"]).pack(anchor="w")
-            ctk.CTkLabel(inner, text=ic["sub"],
-                         font=ctk.CTkFont(size=9),
-                         text_color=COLOR_TEXT_SECONDARY).pack(anchor="w")
-
-        self.pages["results"].tkraise()
-
-    # ── Export to Outlook ────────────────────────────────────────
-
-    def _export_to_outlook(self):
-        subject = f"Insight IQ Analysis Report - {self.selected_group or 'Report'}"
-        body = self.summary_text or "Analysis summary not available."
-
-        if self.breaches:
-            body += "\n\n--- THRESHOLD BREACHES ---\n"
-            for b in self.breaches:
-                body += f"- {b['column']} ({b['sheet']}): {b['deviation_pct']}% {b['direction']} average\n"
-
-        try:
-            import win32com.client
-            outlook = win32com.client.Dispatch("Outlook.Application")
-            mail = outlook.CreateItem(0)
-            mail.Subject = subject
-            mail.Body = body
-            mail.Display()
-        except ImportError:
-            messagebox.showinfo("Export",
-                                "Outlook integration requires Windows with pywin32.\n\n"
-                                "Summary has been copied to clipboard instead.")
-            self.clipboard_clear()
-            self.clipboard_append(f"Subject: {subject}\n\n{body}")
-        except Exception as e:
-            messagebox.showerror("Outlook Error", str(e))
-
-    # ── Browse Folder ────────────────────────────────────────────
-
-    def _browse_folder(self):
-        folder = filedialog.askdirectory(title="Select Project Folder")
-        if not folder:
-            return
-        self.project_folder = folder
-        display = os.path.basename(folder) or folder
-        self.folder_label.configure(text=display, text_color=COLOR_PRIMARY)
-        self.report_groups = scan_folder(folder)
-        self._populate_report_selector()
-        self._show_page("data_analysis")
-
-
-# ╔════════════════════════════════════════════════════════════════════╗
-# ║                         ENTRY POINT                               ║
-# ╚════════════════════════════════════════════════════════════════════╝
-
-if __name__ == "__main__":
-    app = InsightIQApp()
-    app.mainloop()
+SELECT *
+FROM SalaryRanking
+WHERE SalaryRank = 1;
+GO
+
+CREATE VIEW EmployeeDetails AS
+SELECT
+    E.EmployeeID,
+    E.EmployeeName,
+    E.Salary,
+    D.DepartmentName
+FROM Employees E
+INNER JOIN Departments D
+    ON E.DepartmentID = D.DepartmentID;
+GO
+
+SELECT * FROM EmployeeDetails;
+
+DELETE FROM Employees
+WHERE EmployeeID = 107;
+
+SELECT * FROM Employees;
+
+SELECT * FROM Departments;
