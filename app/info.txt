@@ -1,123 +1,56 @@
-# table_finder.py
-# Finds every separate table in every sheet of an Excel file.
-# Requires: pip install openpyxl pandas
+You are a Table Structure Detector for Excel reports.
 
-import openpyxl
-import pandas as pd
-from collections import deque
+INPUT
+You receive an anonymized map of an Excel workbook. It contains NO real data.
+Each cell is a code:
+- N = number
+- D = date
+- T = text
+- . = empty
+Rows are numbered on the left. Columns are Excel letters (A, B, C...).
+Some header cells may show short labels in quotes, like "Week" or "Units".
+Each sheet starts with a line: ### SHEET: <name>
 
+YOUR TASK
+Find every separate table in every sheet and report its exact location.
 
-def load_grid(ws):
-    """Read a sheet into a 2D list, filling merged cells with their top-left value."""
-    max_r, max_c = ws.max_row, ws.max_column
-    grid = [[ws.cell(r, c).value for c in range(1, max_c + 1)] for r in range(1, max_r + 1)]
-    for rng in ws.merged_cells.ranges:
-        val = ws.cell(rng.min_row, rng.min_col).value
-        for r in range(rng.min_row, rng.max_row + 1):
-            for c in range(rng.min_col, rng.max_col + 1):
-                grid[r - 1][c - 1] = val
-    return grid
+HOW TO IDENTIFY TABLES
+1. A table is a rectangular block of filled cells.
+2. Tables are usually separated by one or more fully empty rows or columns.
+3. Tables can be stacked vertically or placed side by side in the same sheet.
+4. A header row is mostly T (or quoted labels) and is followed by rows of N and/or D.
+5. Headers can span 2-3 rows (e.g. a group label row above a column label row). Include all of them.
+6. A single T line above the header, often spanning only 1-2 cells, is a title row, not part of the data.
+7. A column of T values on the left of N values is a category/label column and belongs to the table.
+8. Total or subtotal rows at the bottom belong to the table; mark them separately.
+9. Ignore notes, footnotes, disclaimers, source lines and single stray cells.
+10. Never merge two blocks that are separated by an empty row or column unless the same header clearly continues.
 
+OUTPUT
+Reply with ONLY valid JSON. No explanation, no markdown, no code fences.
+Format:
+{
+  "sheet_count": <number>,
+  "table_count": <number>,
+  "tables": [
+    {
+      "sheet": "<sheet name exactly as given>",
+      "range": "<top-left>:<bottom-right>, e.g. B4:H60",
+      "header_rows": [<row numbers>],
+      "title_row": <row number or null>,
+      "total_rows": [<row numbers or empty list>],
+      "orientation": "rows" or "columns",
+      "column_types": {"<column letter>": "date|number|category|text"},
+      "has_time_series": true or false,
+      "confidence": "high|medium|low",
+      "reason": "<one short sentence>"
+    }
+  ]
+}
 
-def is_filled(v):
-    return v is not None and str(v).strip() != ""
-
-
-def find_blocks(grid, gap=1):
-    """Group filled cells into blocks. Cells within `gap` empty cells of each other join the same block."""
-    rows = len(grid)
-    cols = len(grid[0]) if rows else 0
-    seen = [[False] * cols for _ in range(rows)]
-    blocks = []
-
-    for r in range(rows):
-        for c in range(cols):
-            if seen[r][c] or not is_filled(grid[r][c]):
-                continue
-            q = deque([(r, c)])
-            seen[r][c] = True
-            r0 = r1 = r
-            c0 = c1 = c
-            while q:
-                cr, cc = q.popleft()
-                r0, r1 = min(r0, cr), max(r1, cr)
-                c0, c1 = min(c0, cc), max(c1, cc)
-                for dr in range(-gap, gap + 1):
-                    for dc in range(-gap, gap + 1):
-                        nr, nc = cr + dr, cc + dc
-                        if 0 <= nr < rows and 0 <= nc < cols and not seen[nr][nc] and is_filled(grid[nr][nc]):
-                            seen[nr][nc] = True
-                            q.append((nr, nc))
-            blocks.append((r0, r1, c0, c1))
-    return blocks
-
-
-def detect_header(block_rows, scan=5):
-    """Header = first row (within the first few) that is mostly text and followed by a row with numbers."""
-    def text_ratio(row):
-        filled = [v for v in row if is_filled(v)]
-        if not filled:
-            return 0
-        return sum(isinstance(v, str) for v in filled) / len(filled)
-
-    for i in range(min(scan, len(block_rows) - 1)):
-        if text_ratio(block_rows[i]) >= 0.7 and text_ratio(block_rows[i + 1]) < 0.7:
-            return i
-    return 0
-
-
-def make_unique(headers):
-    out, count = [], {}
-    for i, h in enumerate(headers):
-        name = str(h).strip() if is_filled(h) else f"col_{i + 1}"
-        if name in count:
-            count[name] += 1
-            name = f"{name}_{count[name]}"
-        else:
-            count[name] = 0
-        out.append(name)
-    return out
-
-
-def extract_tables(path, min_rows=2, min_cols=2):
-    """Return a list of dicts: sheet, location, title, and a DataFrame for each table found."""
-    wb = openpyxl.load_workbook(path, data_only=True)
-    results = []
-
-    for ws in wb.worksheets:
-        grid = load_grid(ws)
-        if not grid:
-            continue
-        for (r0, r1, c0, c1) in find_blocks(grid):
-            block = [row[c0:c1 + 1] for row in grid[r0:r1 + 1]]
-            # drop fully empty rows/cols inside the block
-            block = [row for row in block if any(is_filled(v) for v in row)]
-            if len(block) < min_rows:
-                continue
-            keep = [j for j in range(len(block[0])) if any(is_filled(row[j]) for row in block)]
-            block = [[row[j] for j in keep] for row in block]
-            if len(keep) < min_cols:
-                continue
-
-            h = detect_header(block)
-            title_rows = block[:h]
-            title = " ".join(str(v) for row in title_rows for v in row if is_filled(v)) or None
-
-            df = pd.DataFrame(block[h + 1:], columns=make_unique(block[h]))
-            df = df.dropna(how="all")
-
-            results.append({
-                "sheet": ws.title,
-                "location": f"R{r0 + 1}C{c0 + 1}:R{r1 + 1}C{c1 + 1}",
-                "title": title,
-                "data": df,
-            })
-    return results
-
-
-if __name__ == "__main__":
-    import sys
-    file_path = sys.argv[1] if len(sys.argv) > 1 else "sample.xlsx"
-    for t in extract_tables(file_path):
-        print(f"\n=== Sheet: {t['sheet']} | {t['location']} | Title: {t['title']}")
-        print(t["data"].head())
+RULES
+- Use exact sheet names and exact Excel ranges.
+- "orientation" is "columns" when dates/weeks run across the header row (e.g. 52 weeks as columns), "rows" when they run down a column.
+- "has_time_series" is true if the table has a date/week dimension with numbers.
+- If unsure about a boundary, still give your best range and set confidence to "low".
+- Never invent data values. Never ask for real data.
