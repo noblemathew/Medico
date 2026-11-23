@@ -1,150 +1,21 @@
-CREATE DATABASE MedicoDB;
-GO
+I'm building "Insight IQ", a universal Excel report analysis tool in Python (CustomTkinter desktop app). Build a standalone module `table_finder.py` that can extract tables from ANY messy Excel report, with no predefined template.
 
-USE MedicoDB;
-GO
+Requirements:
+1. Open .xlsx files with openpyxl (data_only=True) and process every sheet.
+2. Handle merged cells by filling each merged range with its top-left value.
+3. Detect multiple separate tables in a single sheet: group filled cells into blocks separated by empty rows/columns (configurable gap, default 1). Return the bounding box of each block.
+4. For each block, detect the header row automatically: the first row (within the first ~5 rows) that is mostly text and is followed by rows containing numbers/dates. Support multi-row headers by combining them (e.g. "Sales - Units").
+5. Treat any text rows above the header as the table title.
+6. Make column names unique and fill blanks with col_1, col_2, etc.
+7. Return each table as a pandas DataFrame along with: sheet name, cell range, title.
+8. Profile every column and classify it as one of: date/week, numeric measure, category, ID, or text. Detect dates even when they're stored as text or as week labels like "W46 2026".
+9. Add a function `load_folder(path)` that opens every Excel file in a folder, matches tables with the same/similar headers across files, and stacks them in date order, so history spread across multiple files becomes one continuous table.
+10. Add a `confirm/override` mechanism: save a small JSON config per report (keyed by file name pattern + sheet) where the user can fix table ranges, header rows, or column types once, and the tool reuses it next time.
+11. Add a `summarize_structure(tables)` function that returns ONLY metadata (sheet, table title, column names, column types, row count, date range) and no raw values. This is what will later be sent to an AI model, so it must never include actual data values.
 
-CREATE TABLE Departments (
-    DepartmentID INT PRIMARY KEY,
-    DepartmentName VARCHAR(100)
-);
-
-CREATE TABLE Doctors (
-    DoctorID INT PRIMARY KEY,
-    DoctorName VARCHAR(100),
-    Specialization VARCHAR(100),
-    DepartmentID INT,
-    Salary DECIMAL(10,2)
-);
-
-CREATE TABLE Patients (
-    PatientID INT PRIMARY KEY,
-    PatientName VARCHAR(100),
-    Age INT,
-    Gender VARCHAR(10),
-    City VARCHAR(50)
-);
-
-CREATE TABLE Appointments (
-    AppointmentID INT PRIMARY KEY,
-    PatientID INT,
-    DoctorID INT,
-    AppointmentDate DATE,
-    Status VARCHAR(30),
-    Fee DECIMAL(10,2)
-);
-
-INSERT INTO Departments VALUES
-(1, 'Cardiology'),
-(2, 'Neurology'),
-(3, 'Orthopedics'),
-(4, 'General Medicine');
-
-INSERT INTO Doctors VALUES
-(101, 'Dr. Arun', 'Cardiologist', 1, 120000),
-(102, 'Dr. Priya', 'Neurologist', 2, 135000),
-(103, 'Dr. Rahul', 'Orthopedic', 3, 110000),
-(104, 'Dr. Sneha', 'Physician', 4, 90000);
-
-INSERT INTO Patients VALUES
-(201, 'John', 45, 'Male', 'Kochi'),
-(202, 'Anu', 32, 'Female', 'Kottayam'),
-(203, 'Rahul', 55, 'Male', 'Thrissur'),
-(204, 'Meera', 28, 'Female', 'Kochi');
-
-INSERT INTO Appointments VALUES
-(301, 201, 101, '2026-10-01', 'Completed', 1500),
-(302, 202, 104, '2026-10-02', 'Completed', 800),
-(303, 203, 102, '2026-10-03', 'Scheduled', 1800),
-(304, 204, 103, '2026-10-04', 'Cancelled', 1200);
-
-SELECT * FROM Departments;
-SELECT * FROM Doctors;
-SELECT * FROM Patients;
-SELECT * FROM Appointments;
-
-SELECT *
-FROM Patients
-WHERE Age > 40;
-
-SELECT *
-FROM Doctors
-ORDER BY Salary DESC;
-
-SELECT COUNT(*) AS TotalPatients
-FROM Patients;
-
-SELECT AVG(Salary) AS AverageSalary
-FROM Doctors;
-
-SELECT Status, COUNT(*) AS TotalAppointments
-FROM Appointments
-GROUP BY Status;
-
-SELECT
-    D.DoctorName,
-    DP.DepartmentName
-FROM Doctors D
-INNER JOIN Departments DP
-ON D.DepartmentID = DP.DepartmentID;
-
-SELECT
-    P.PatientName,
-    D.DoctorName,
-    A.AppointmentDate,
-    A.Status,
-    A.Fee
-FROM Appointments A
-INNER JOIN Patients P
-ON A.PatientID = P.PatientID
-INNER JOIN Doctors D
-ON A.DoctorID = D.DoctorID;
-
-SELECT
-    DoctorID,
-    SUM(Fee) AS TotalRevenue
-FROM Appointments
-WHERE Status = 'Completed'
-GROUP BY DoctorID;
-
-UPDATE Patients
-SET City = 'Ernakulam'
-WHERE PatientID = 201;
-
-ALTER TABLE Patients
-ADD Email VARCHAR(100);
-
-SELECT *
-FROM Doctors
-WHERE Salary > (
-    SELECT AVG(Salary)
-    FROM Doctors
-);
-
-WITH DoctorRanking AS (
-    SELECT
-        DoctorName,
-        Salary,
-        DENSE_RANK() OVER (
-            ORDER BY Salary DESC
-        ) AS Ranking
-    FROM Doctors
-)
-SELECT * FROM DoctorRanking;
-
-CREATE VIEW AppointmentDetails AS
-SELECT
-    A.AppointmentID,
-    P.PatientName,
-    D.DoctorName,
-    A.AppointmentDate,
-    A.Status,
-    A.Fee
-FROM Appointments A
-INNER JOIN Patients P
-ON A.PatientID = P.PatientID
-INNER JOIN Doctors D
-ON A.DoctorID = D.DoctorID;
-GO
-
-SELECT * FROM AppointmentDetails;
+Constraints:
+- All processing must stay local. No network calls.
+- Use only openpyxl, pandas, numpy and the standard library.
+- Write clean, well-commented, complete code (no placeholders), with type hints.
+- Include a `__main__` block that takes a file path, prints every detected table with its location, title, column types, and the first 5 rows.
+- Also generate a test script that creates 3 messy dummy Excel files (multiple tables per sheet, merged title cells, blank gaps, a 52-week sales table split across two files for 2025 and 2026) and runs the extractor on them.
