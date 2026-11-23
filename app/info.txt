@@ -1,56 +1,180 @@
-You are a Table Structure Detector for Excel reports.
+# anonymize_and_extract.py
+# Step 1: python anonymize_and_extract.py map report.xlsx
+#         -> creates copilot_prompt.txt (no real values inside). Paste it into Copilot.
+# Step 2: save Copilot's JSON reply as tables.json
+#         python anonymize_and_extract.py extract report.xlsx tables.json
+#         -> extracts the real tables locally into extracted_tables.xlsx
+# Requires: pip install openpyxl pandas
 
-INPUT
-You receive an anonymized map of an Excel workbook. It contains NO real data.
-Each cell is a code:
-- N = number
-- D = date
-- T = text
-- . = empty
-Rows are numbered on the left. Columns are Excel letters (A, B, C...).
-Some header cells may show short labels in quotes, like "Week" or "Units".
-Each sheet starts with a line: ### SHEET: <name>
+import sys
+import json
+import datetime as dt
+import openpyxl
+from openpyxl.utils import get_column_letter, range_boundaries
+import pandas as pd
 
-YOUR TASK
-Find every separate table in every sheet and report its exact location.
+# If True, short text in header-like rows is kept (e.g. "Week", "Units").
+# Keep False if headers themselves may contain confidential names.
+KEEP_HEADER_TEXT = False
+MAX_HEADER_LEN = 30
 
-HOW TO IDENTIFY TABLES
-1. A table is a rectangular block of filled cells.
-2. Tables are usually separated by one or more fully empty rows or columns.
-3. Tables can be stacked vertically or placed side by side in the same sheet.
-4. A header row is mostly T (or quoted labels) and is followed by rows of N and/or D.
-5. Headers can span 2-3 rows (e.g. a group label row above a column label row). Include all of them.
-6. A single T line above the header, often spanning only 1-2 cells, is a title row, not part of the data.
-7. A column of T values on the left of N values is a category/label column and belongs to the table.
-8. Total or subtotal rows at the bottom belong to the table; mark them separately.
-9. Ignore notes, footnotes, disclaimers, source lines and single stray cells.
-10. Never merge two blocks that are separated by an empty row or column unless the same header clearly continues.
 
-OUTPUT
-Reply with ONLY valid JSON. No explanation, no markdown, no code fences.
-Format:
-{
-  "sheet_count": <number>,
-  "table_count": <number>,
-  "tables": [
-    {
-      "sheet": "<sheet name exactly as given>",
-      "range": "<top-left>:<bottom-right>, e.g. B4:H60",
-      "header_rows": [<row numbers>],
-      "title_row": <row number or null>,
-      "total_rows": [<row numbers or empty list>],
-      "orientation": "rows" or "columns",
-      "column_types": {"<column letter>": "date|number|category|text"},
-      "has_time_series": true or false,
-      "confidence": "high|medium|low",
-      "reason": "<one short sentence>"
-    }
-  ]
-}
+def load_grid(ws):
+    max_r, max_c = ws.max_row, ws.max_column
+    grid = [[ws.cell(r, c).value for c in range(1, max_c + 1)] for r in range(1, max_r + 1)]
+    for rng in ws.merged_cells.ranges:
+        val = ws.cell(rng.min_row, rng.min_col).value
+        for r in range(rng.min_row, rng.max_row + 1):
+            for c in range(rng.min_col, rng.max_col + 1):
+                grid[r - 1][c - 1] = val
+    return grid
 
-RULES
-- Use exact sheet names and exact Excel ranges.
-- "orientation" is "columns" when dates/weeks run across the header row (e.g. 52 weeks as columns), "rows" when they run down a column.
-- "has_time_series" is true if the table has a date/week dimension with numbers.
-- If unsure about a boundary, still give your best range and set confidence to "low".
-- Never invent data values. Never ask for real data.
+
+def cell_code(v):
+    if v is None or str(v).strip() == "":
+        return "."
+    if isinstance(v, (dt.date, dt.datetime)):
+        return "D"
+    if isinstance(v, bool):
+        return "T"
+    if isinstance(v, (int, float)):
+        return "N"
+    s = str(v).strip()
+    try:
+        float(s.replace(",", "").replace("%", ""))
+        return "N"
+    except ValueError:
+        pass
+    try:
+        pd.to_datetime(s, errors="raise")
+        if any(ch.isdigit() for ch in s):
+            return "D"
+    except Exception:
+        pass
+    return "T"
+
+
+def row_is_header_like(codes):
+    filled = [c for c in codes if c != "."]
+    return len(filled) >= 2 and sum(c == "T" for c in filled) / len(filled) >= 0.7
+
+
+def build_shape_map(path):
+    wb = openpyxl.load_workbook(path, data_only=True)
+    out = []
+    for ws in wb.worksheets:
+        grid = load_grid(ws)
+        if not grid:
+            continue
+        ncols = len(grid[0])
+        out.append(f"### SHEET: {ws.title}  (rows 1-{len(grid)}, columns A-{get_column_letter(ncols)})")
+        out.append("ROW | " + " ".join(get_column_letter(c + 1) for c in range(ncols)))
+        for r, row in enumerate(grid, start=1):
+            codes = [cell_code(v) for v in row]
+            if all(c == "." for c in codes):
+                out.append(f"{r} | (empty)")
+                continue
+            if KEEP_HEADER_TEXT and row_is_header_like(codes):
+                labels = []
+                for v, c in zip(row, codes):
+                    if c == "T" and len(str(v).strip()) <= MAX_HEADER_LEN:
+                        labels.append('"' + str(v).strip().replace(" ", "_") + '"')
+                    else:
+                        labels.append(c)
+                out.append(f"{r} | " + " ".join(labels))
+            else:
+                out.append(f"{r} | " + " ".join(codes))
+        out.append("")
+    return "\n".join(out)
+
+
+PROMPT_HEADER = """You are given an anonymized map of an Excel workbook. No real values are included.
+Each cell is a code: N = number, D = date, T = text, . = empty.
+Rows are numbered, columns are Excel letters.
+
+Task: identify every separate table in every sheet.
+For each table give:
+- sheet name
+- full cell range including header (e.g. "B4:H60")
+- header_row (row number of the column header row; if headers span multiple rows, list all)
+- title_row if there is a title line above the table, else null
+- short reason
+
+Rules: tables may sit side by side or stacked; blank rows/columns usually separate tables;
+a header row is mostly T followed by rows of N/D. Ignore notes, footers and disclaimers.
+
+Reply with ONLY valid JSON in this format:
+{"tables": [{"sheet": "Sheet1", "range": "B4:H60", "header_rows": [4], "title_row": 2, "reason": "..."}]}
+
+WORKBOOK MAP:
+"""
+
+
+def make_prompt(path):
+    text = PROMPT_HEADER + build_shape_map(path)
+    with open("copilot_prompt.txt", "w", encoding="utf-8") as f:
+        f.write(text)
+    print("Created copilot_prompt.txt - paste it into Copilot and save the JSON reply as tables.json")
+
+
+def unique(names):
+    seen, out = {}, []
+    for i, n in enumerate(names):
+        n = n or f"col_{i + 1}"
+        if n in seen:
+            seen[n] += 1
+            n = f"{n}_{seen[n]}"
+        else:
+            seen[n] = 0
+        out.append(n)
+    return out
+
+
+def extract(path, json_path):
+    wb = openpyxl.load_workbook(path, data_only=True)
+    with open(json_path, encoding="utf-8") as f:
+        raw = f.read().strip().strip("`")
+        if raw.lower().startswith("json"):
+            raw = raw[4:]
+        spec = json.loads(raw)
+
+    results = []
+    for i, t in enumerate(spec["tables"], start=1):
+        ws = wb[t["sheet"]]
+        grid = load_grid(ws)
+        c0, r0, c1, r1 = range_boundaries(t["range"])
+        block = [row[c0 - 1:c1] for row in grid[r0 - 1:r1]]
+        hdr_rows = t.get("header_rows") or [r0]
+        hdr_idx = [h - r0 for h in hdr_rows]
+
+        headers = []
+        for j in range(c1 - c0 + 1):
+            parts = [str(block[h][j]).strip() for h in hdr_idx if block[h][j] not in (None, "")]
+            merged = " - ".join(dict.fromkeys(parts))
+            headers.append(merged)
+
+        body = block[max(hdr_idx) + 1:]
+        df = pd.DataFrame(body, columns=unique(headers)).dropna(how="all")
+        title = None
+        if t.get("title_row"):
+            vals = [v for v in grid[t["title_row"] - 1] if v not in (None, "")]
+            title = " ".join(str(v) for v in vals) or None
+
+        results.append({"name": f"T{i}_{t['sheet']}"[:31], "title": title, "range": t["range"], "data": df})
+        print(f"\n=== {t['sheet']} {t['range']} | title: {title} | {df.shape[0]} rows x {df.shape[1]} cols")
+        print(df.head())
+
+    with pd.ExcelWriter("extracted_tables.xlsx") as xw:
+        for r in results:
+            r["data"].to_excel(xw, sheet_name=r["name"], index=False)
+    print("\nSaved all tables to extracted_tables.xlsx")
+    return results
+
+
+if __name__ == "__main__":
+    if len(sys.argv) >= 3 and sys.argv[1] == "map":
+        make_prompt(sys.argv[2])
+    elif len(sys.argv) >= 4 and sys.argv[1] == "extract":
+        extract(sys.argv[2], sys.argv[3])
+    else:
+        print(__doc__ or "Usage: map <file.xlsx> | extract <file.xlsx> <tables.json>")
